@@ -427,6 +427,19 @@ function DriverJobDetailPage({ bookingRef, onBack, onJobUpdated }) {
               </div>
             </div>
 
+            {/* Resort/Hotel */}
+            {(job.resort || job.accommodation_name) && (
+              <div className="flex items-start gap-3">
+                <i className="fas fa-hotel text-cyan-600 mt-1"></i>
+                <div>
+                  <p className="text-sm text-gray-500">โซน</p>
+                  <p className="font-medium">
+                    {job.resort || job.accommodation_name}
+                  </p>
+                </div>
+              </div>
+            )}
+
             {/* Pickup Location */}
             <div className="flex items-start gap-3">
               <i className="fas fa-map-marker-alt text-cyan-600 mt-1"></i>
