@@ -41,6 +41,7 @@ try {
                 b.pickup_date_adjusted,
                 COALESCE(b.pickup_date_adjusted, b.pickup_date) as pickup_date,
                 dva.status as assignment_status,
+                dva.assignment_notes,
                 dva.completion_type,
                 dva.assigned_at,
                 v.registration,
@@ -86,12 +87,14 @@ try {
     $pickupLocation = '-';
     $dropoffLocation = '-';
 
-    if (strpos($bookingType, 'arrival') !== false || !empty($job['arrival_date'])) {
-        // Arrival transfer: Airport -> Accommodation
+    // Priority: booking_type first, then dates (to prevent swapping for bookings with both dates)
+    // Keywords from Holiday Taxis API: "outbound" = Arrival, "return" = Departure
+    if (strpos($bookingType, 'outbound') !== false) {
+        // Arrival transfer (Single outbound only): Airport -> Accommodation
         $pickupLocation = $airport ?: 'Airport';
         $dropoffLocation = $accommodation ?: 'Resort/Hotel';
-    } elseif (strpos($bookingType, 'departure') !== false || !empty($job['departure_date'])) {
-        // Departure transfer: Accommodation -> Airport
+    } elseif (strpos($bookingType, 'return') !== false) {
+        // Departure transfer (Single return only): Accommodation -> Airport
         $pickupLocation = $accommodation ?: 'Resort/Hotel';
         $dropoffLocation = $airport ?: 'Airport';
     } elseif (strpos($bookingType, 'quote') !== false) {
@@ -102,7 +105,7 @@ try {
         // If Quote addresses not available, try to determine from dates
         if (empty($pickupLocation) && empty($dropoffLocation)) {
             // If arrival_date exists, treat as arrival (Airport -> Accommodation)
-            if (!empty($job['arrival_date'])) {
+            if (!empty($job['arrival_date']) && empty($job['departure_date'])) {
                 $pickupLocation = $airport ?: 'Airport';
                 $dropoffLocation = $accommodation ?: 'Resort/Hotel';
             }
@@ -133,23 +136,55 @@ try {
         if (empty($pickupLocation)) $pickupLocation = '-';
         if (empty($dropoffLocation)) $dropoffLocation = '-';
     } else {
-        // Default: Use available location data
-        if (!empty($accommodation) && !empty($airport)) {
-            // If both exist, default to departure direction
-            $pickupLocation = $accommodation;
-            $dropoffLocation = $airport;
-        } elseif (!empty($accommodation)) {
-            $pickupLocation = $accommodation;
-            $dropoffLocation = 'Destination';
-        } elseif (!empty($airport)) {
-            $pickupLocation = $airport;
-            $dropoffLocation = 'Destination';
+        // No clear booking_type: Use dates to determine direction
+        if (!empty($job['arrival_date']) && empty($job['departure_date'])) {
+            // Only arrival_date: Airport -> Accommodation
+            $pickupLocation = $airport ?: 'Airport';
+            $dropoffLocation = $accommodation ?: 'Resort/Hotel';
+        } elseif (!empty($job['departure_date'])) {
+            // Has departure_date: Accommodation -> Airport
+            $pickupLocation = $accommodation ?: 'Resort/Hotel';
+            $dropoffLocation = $airport ?: 'Airport';
+        } else {
+            // Default: Use available location data
+            if (!empty($accommodation) && !empty($airport)) {
+                // If both exist, default to departure direction
+                $pickupLocation = $accommodation;
+                $dropoffLocation = $airport;
+            } elseif (!empty($accommodation)) {
+                $pickupLocation = $accommodation;
+                $dropoffLocation = 'Destination';
+            } elseif (!empty($airport)) {
+                $pickupLocation = $airport;
+                $dropoffLocation = 'Destination';
+            }
         }
     }
 
     // Add calculated fields to job data
     $job['pickup_location'] = $pickupLocation;
     $job['dropoff_location'] = $dropoffLocation;
+
+    // Get the latest tracking status from location logs
+    $currentJobStatus = 'BEFORE_PICKUP'; // Default
+    $tokenSql = "SELECT id FROM driver_tracking_tokens WHERE booking_ref = :booking_ref AND driver_id = :driver_id ORDER BY created_at DESC LIMIT 1";
+    $tokenStmt = $pdo->prepare($tokenSql);
+    $tokenStmt->execute([':booking_ref' => $booking_ref, ':driver_id' => $driver_id]);
+    $tokenData = $tokenStmt->fetch(PDO::FETCH_ASSOC);
+
+    if ($tokenData) {
+        $statusSql = "SELECT tracking_status FROM driver_location_logs
+                      WHERE token_id = :token_id
+                      ORDER BY tracked_at DESC LIMIT 1";
+        $statusStmt = $pdo->prepare($statusSql);
+        $statusStmt->execute([':token_id' => $tokenData['id']]);
+        $latestStatus = $statusStmt->fetch(PDO::FETCH_ASSOC);
+        if ($latestStatus && !empty($latestStatus['tracking_status'])) {
+            $currentJobStatus = $latestStatus['tracking_status'];
+        }
+    }
+
+    $job['current_job_status'] = $currentJobStatus;
 
     ob_end_clean();
 

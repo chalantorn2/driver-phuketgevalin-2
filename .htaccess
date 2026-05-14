@@ -1,0 +1,11 @@
+# Basic configuration - Safe version
+RewriteEngine On
+
+# Redirect to HTTPS (optional)
+# RewriteCond %{HTTPS} off
+# RewriteRule ^(.*)$ https://%{HTTP_HOST}%{REQUEST_URI} [L,R=301]
+
+# Allow all access
+<FilesMatch "\.(php|html|js|css)$">
+    Require all granted
+</FilesMatch>

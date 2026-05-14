@@ -95,12 +95,14 @@ try {
         $pickupLocation = '-';
         $dropoffLocation = '-';
 
-        if (strpos($bookingType, 'arrival') !== false || !empty($job['arrival_date'])) {
-            // Arrival transfer: Airport -> Accommodation
+        // Priority: booking_type first, then dates (to prevent swapping for bookings with both dates)
+        // Keywords from Holiday Taxis API: "outbound" = Arrival, "return" = Departure
+        if (strpos($bookingType, 'outbound') !== false) {
+            // Arrival transfer (Single outbound only): Airport -> Accommodation
             $pickupLocation = $airport ?: 'Airport';
             $dropoffLocation = $accommodation ?: 'Resort/Hotel';
-        } elseif (strpos($bookingType, 'departure') !== false || !empty($job['departure_date'])) {
-            // Departure transfer: Accommodation -> Airport
+        } elseif (strpos($bookingType, 'return') !== false) {
+            // Departure transfer (Single return only): Accommodation -> Airport
             $pickupLocation = $accommodation ?: 'Resort/Hotel';
             $dropoffLocation = $airport ?: 'Airport';
         } elseif (strpos($bookingType, 'quote') !== false) {
@@ -110,7 +112,7 @@ try {
 
             // If Quote addresses not available, try to determine from dates
             if (empty($pickupLocation) && empty($dropoffLocation)) {
-                if (!empty($job['arrival_date'])) {
+                if (!empty($job['arrival_date']) && empty($job['departure_date'])) {
                     $pickupLocation = $airport ?: 'Airport';
                     $dropoffLocation = $accommodation ?: 'Resort/Hotel';
                 } elseif (!empty($job['departure_date'])) {
@@ -137,16 +139,27 @@ try {
             if (empty($pickupLocation)) $pickupLocation = '-';
             if (empty($dropoffLocation)) $dropoffLocation = '-';
         } else {
-            // Default: Use available location data
-            if (!empty($accommodation) && !empty($airport)) {
-                $pickupLocation = $accommodation;
-                $dropoffLocation = $airport;
-            } elseif (!empty($accommodation)) {
-                $pickupLocation = $accommodation;
-                $dropoffLocation = 'Destination';
-            } elseif (!empty($airport)) {
-                $pickupLocation = $airport;
-                $dropoffLocation = 'Destination';
+            // No clear booking_type: Use dates to determine direction
+            if (!empty($job['arrival_date']) && empty($job['departure_date'])) {
+                // Only arrival_date: Airport -> Accommodation
+                $pickupLocation = $airport ?: 'Airport';
+                $dropoffLocation = $accommodation ?: 'Resort/Hotel';
+            } elseif (!empty($job['departure_date'])) {
+                // Has departure_date: Accommodation -> Airport
+                $pickupLocation = $accommodation ?: 'Resort/Hotel';
+                $dropoffLocation = $airport ?: 'Airport';
+            } else {
+                // Default: Use available location data
+                if (!empty($accommodation) && !empty($airport)) {
+                    $pickupLocation = $accommodation;
+                    $dropoffLocation = $airport;
+                } elseif (!empty($accommodation)) {
+                    $pickupLocation = $accommodation;
+                    $dropoffLocation = 'Destination';
+                } elseif (!empty($airport)) {
+                    $pickupLocation = $airport;
+                    $dropoffLocation = 'Destination';
+                }
             }
         }
 

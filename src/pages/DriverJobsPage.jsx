@@ -424,12 +424,10 @@ function DriverJobsPage({ driver, onLogout, onViewDetail, onViewProfile }) {
                 </div>
 
                 {/* โซน */}
-                {(job.resort || job.accommodation_name) && (
+                {job.resort && (
                   <div className="flex items-center gap-1.5 mb-2">
                     <i className="fas fa-hotel text-gray-500 text-xs"></i>
-                    <span className="text-xs text-gray-700">
-                      {job.resort || job.accommodation_name}
-                    </span>
+                    <span className="text-xs text-gray-700">{job.resort}</span>
                   </div>
                 )}
 

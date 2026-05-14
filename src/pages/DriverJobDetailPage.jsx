@@ -16,6 +16,7 @@ function DriverJobDetailPage({ bookingRef, onBack, onJobUpdated }) {
 
   // GPS tracking states
   const [currentStatus, setCurrentStatus] = useState("idle"); // idle, tracking, completed, no_show
+  const [jobStatus, setJobStatus] = useState("BEFORE_PICKUP"); // Track actual job status for Holiday Taxis
   const [trackingInterval, setTrackingInterval] = useState(null);
   const [currentLocation, setCurrentLocation] = useState(null);
   const [canStartTracking, setCanStartTracking] = useState(false);
@@ -52,6 +53,11 @@ function DriverJobDetailPage({ bookingRef, onBack, onJobUpdated }) {
 
       if (result.success) {
         setJob(result.data.job);
+
+        // Restore jobStatus from database
+        if (result.data.job.current_job_status) {
+          setJobStatus(result.data.job.current_job_status);
+        }
 
         // Set current status based on job status
         if (result.data.job.completion_type === "NO_SHOW") {
@@ -176,7 +182,7 @@ function DriverJobDetailPage({ bookingRef, onBack, onJobUpdated }) {
       latitude: position.coords.latitude,
       longitude: position.coords.longitude,
       accuracy: position.coords.accuracy,
-      status: "BEFORE_PICKUP",
+      status: jobStatus, // Send current job status with every location update
     };
 
     setCurrentLocation(location);
@@ -219,6 +225,7 @@ function DriverJobDetailPage({ bookingRef, onBack, onJobUpdated }) {
 
           if (result.success) {
             setCurrentStatus("tracking");
+            setJobStatus("BEFORE_PICKUP");
             await sendLocation(position);
             startGPSTracking();
             // Success - UI will update automatically
@@ -238,6 +245,28 @@ function DriverJobDetailPage({ bookingRef, onBack, onJobUpdated }) {
       alert("❌ ไม่สามารถเริ่มงานได้");
       setActionLoading(false);
     }
+  };
+
+  const handleWaitingForCustomer = () => {
+    if (!confirm("ยืนยันว่าถึงจุดรับแล้ว?")) return;
+
+    setJobStatus("WAITING_FOR_CUSTOMER");
+
+    // Send location immediately with new status
+    sendLocationUpdate();
+
+    alert("✅ อัพเดทสถานะเป็น 'รอลูกค้า' แล้ว");
+  };
+
+  const handleAfterPickup = () => {
+    if (!confirm("ยืนยันว่าลูกค้าขึ้นรถแล้ว?")) return;
+
+    setJobStatus("AFTER_PICKUP");
+
+    // Send location immediately with new status
+    sendLocationUpdate();
+
+    alert("✅ อัพเดทสถานะเป็น 'กำลังส่ง' แล้ว");
   };
 
   const handleCompleteJob = async (
@@ -320,11 +349,26 @@ function DriverJobDetailPage({ bookingRef, onBack, onJobUpdated }) {
           "px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800",
       };
     } else if (currentStatus === "tracking") {
-      return {
-        text: "🔴 กำลังทำงาน",
-        className:
-          "px-3 py-1 rounded-full text-sm font-medium bg-green-100 text-green-800 animate-pulse-custom",
-      };
+      // Show different status based on jobStatus
+      if (jobStatus === "BEFORE_PICKUP") {
+        return {
+          text: "🔴 กำลังไปรับ",
+          className:
+            "px-3 py-1 rounded-full text-sm font-medium bg-orange-100 text-orange-800 animate-pulse-custom",
+        };
+      } else if (jobStatus === "WAITING_FOR_CUSTOMER") {
+        return {
+          text: "🟡 รอลูกค้า",
+          className:
+            "px-3 py-1 rounded-full text-sm font-medium bg-yellow-100 text-yellow-800 animate-pulse-custom",
+        };
+      } else if (jobStatus === "AFTER_PICKUP") {
+        return {
+          text: "🔵 กำลังส่ง",
+          className:
+            "px-3 py-1 rounded-full text-sm font-medium bg-blue-100 text-blue-800 animate-pulse-custom",
+        };
+      }
     } else if (currentStatus === "completed") {
       return {
         text: "✅ เสร็จสิ้น",
@@ -428,14 +472,12 @@ function DriverJobDetailPage({ bookingRef, onBack, onJobUpdated }) {
             </div>
 
             {/* Resort/Hotel */}
-            {(job.resort || job.accommodation_name) && (
+            {job.resort && (
               <div className="flex items-start gap-3">
                 <i className="fas fa-hotel text-cyan-600 mt-1"></i>
                 <div>
                   <p className="text-sm text-gray-500">โซน</p>
-                  <p className="font-medium">
-                    {job.resort || job.accommodation_name}
-                  </p>
+                  <p className="font-medium">{job.resort}</p>
                 </div>
               </div>
             )}
@@ -586,8 +628,56 @@ function DriverJobDetailPage({ bookingRef, onBack, onJobUpdated }) {
             </button>
           )}
 
-          {/* Complete and No Show Buttons */}
-          {currentStatus === "tracking" && (
+          {/* Before Pickup Buttons (กำลังไปรับ) */}
+          {currentStatus === "tracking" && jobStatus === "BEFORE_PICKUP" && (
+            <>
+              <button
+                onClick={handleWaitingForCustomer}
+                disabled={actionLoading}
+                className="w-full bg-gradient-to-r from-yellow-500 to-yellow-600 text-white py-4 rounded-xl font-semibold text-lg shadow-lg hover:from-yellow-600 hover:to-yellow-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <i className="fas fa-map-marker-alt mr-2"></i>
+                ถึงจุดรับแล้ว
+              </button>
+
+              <button
+                onClick={handleNoShow}
+                disabled={actionLoading}
+                className="w-full bg-gradient-to-r from-red-500 to-red-600 text-white py-4 rounded-xl font-semibold text-lg shadow-lg hover:from-red-600 hover:to-red-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+              >
+                <i className="fas fa-user-times mr-2"></i>
+                ไม่เจอลูกค้า (No Show)
+              </button>
+            </>
+          )}
+
+          {/* Waiting for Customer Buttons (รอลูกค้า) */}
+          {currentStatus === "tracking" &&
+            jobStatus === "WAITING_FOR_CUSTOMER" && (
+              <>
+                <button
+                  onClick={handleAfterPickup}
+                  disabled={actionLoading}
+                  className="w-full bg-gradient-to-r from-blue-500 to-blue-600 text-white py-4 rounded-xl font-semibold text-lg shadow-lg hover:from-blue-600
+                hover:to-blue-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <i className="fas fa-user-check mr-2"></i>
+                  ลูกค้าขึ้นรถแล้ว
+                </button>
+
+                <button
+                  onClick={handleNoShow}
+                  disabled={actionLoading}
+                  className="w-full bg-gradient-to-r from-red-500 to-red-600 text-white py-4 rounded-xl font-semibold text-lg shadow-lg hover:from-red-600 hover:to-red-700 transition-all disabled:opacity-50 disabled:cursor-not-allowed"
+                >
+                  <i className="fas fa-user-times mr-2"></i>
+                  ไม่เจอลูกค้า (No Show)
+                </button>
+              </>
+            )}
+
+          {/* After Pickup Buttons (กำลังส่ง) */}
+          {currentStatus === "tracking" && jobStatus === "AFTER_PICKUP" && (
             <>
               <button
                 onClick={() => handleCompleteJob()}
